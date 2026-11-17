@@ -1,0 +1,10 @@
+# origen|destino|distancia
+Bogota|Medellin|415.00
+Medellin|Bogota|415.00
+Bogota|Cali|461.00
+Medellin|Cali|420.00
+Cali|Medellin|420.00
+Bucaramanga|Barranquilla|610.00
+Bogota|Bucaramanga|397.00
+Barranquilla|Cartagena|119.00
+Cartagena|Barranquilla|119.00

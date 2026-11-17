@@ -1,0 +1,4 @@
+# documento|nombre|edad|telefono
+1001|Ana Perez|22|3001112233
+1002|Luis Gomez|17|3015556677
+1003|Marta Ruiz|41|3120001122

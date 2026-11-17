@@ -1,0 +1,3 @@
+#SIGUIENTE 3
+1|1001|Bogota|Cali|2026-11-20
+2|1002|Barranquilla|Cartagena|2026-11-21

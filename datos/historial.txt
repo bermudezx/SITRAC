@@ -1,0 +1,2 @@
+# id|documento|nombre|origen|destino|distancia|fecha|resultado
+10|1003|Marta Ruiz|Medellin|Bogota|415.00|2026-11-01|ATENDIDA

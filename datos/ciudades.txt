@@ -1,0 +1,7 @@
+# Una ciudad por linea
+Bogota
+Medellin
+Cali
+Barranquilla
+Cartagena
+Bucaramanga
