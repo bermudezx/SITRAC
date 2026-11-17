@@ -7,6 +7,7 @@
 *.out
 sitrac
 SITRAC
+pruebas/logica
 
 # Archivos generados por Dev-C++ y otros IDE
 *.layout

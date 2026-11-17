@@ -1,7 +1,7 @@
 [Project]
 FileName=SITRAC.dev
 Name=SITRAC
-Type=1
+Type=0
 Ver=2
 ObjFiles=
 Includes=src
@@ -10,8 +10,8 @@ PrivateResource=
 ResourceIncludes=
 MakeIncludes=
 Compiler=
-CppCompiler=
-Linker=-static-libgcc
+CppCompiler=-std=c++98
+Linker=-mwindows -static-libgcc -lcomctl32 -lgdi32
 IsCpp=1
 Icon=
 ExeOutput=
@@ -24,7 +24,7 @@ HostApplication=
 UseCustomMakefile=0
 CustomMakefile=
 IncludeVersionInfo=0
-SupportXPThemes=0
+SupportXPThemes=1
 CompilerSet=0
 CompilerSettings=0000000000000000000000000
 UnitCount=19

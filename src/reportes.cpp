@@ -2,6 +2,7 @@
 #include "util.h"
 
 #include <limits>
+#include <sstream>
 
 static int contarConexionesSalida(const Ciudad* ciudad) {
     int total = 0;
@@ -186,4 +187,16 @@ void menuReportes(Ciudad* ciudades, Pasajero* pasajeros, const Cola& cola, Histo
             }
         }
     } while (opcion != 0);
+}
+
+string generarReporteCompleto(Ciudad* ciudades, Pasajero* pasajeros, const Cola& cola, Historial* historial) {
+    stringstream salida;
+    streambuf* anterior = cout.rdbuf(salida.rdbuf());
+    reporteGeneral(ciudades, pasajeros, cola, historial);
+    reporteCiudadMasConectada(ciudades);
+    reporteRutasExtremas(ciudades);
+    reporteEdades(pasajeros);
+    reporteSolicitudes(cola, historial);
+    cout.rdbuf(anterior);
+    return salida.str();
 }

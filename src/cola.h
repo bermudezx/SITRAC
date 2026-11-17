@@ -29,5 +29,13 @@ bool encolarExistente(Cola& cola, int id, const string& documento, const string&
 void listarCola(const Cola& cola);
 void listarColaPorDocumento(const Cola& cola, const string& documento);
 void menuCola(Cola& cola, Ciudad* ciudades, Pasajero* pasajeros, Historial*& historial);
+struct ResultadoSolicitud {
+    bool procesada;
+    string resultado;
+    string detalle;
+    string texto;
+};
+
+ResultadoSolicitud procesarSiguienteSolicitud(Cola& cola, Ciudad* ciudades, Pasajero* pasajeros, Historial*& historial, bool cancelar);
 
 #endif

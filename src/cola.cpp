@@ -2,6 +2,7 @@
 #include "rutas.h"
 #include "util.h"
 
+#include <cstdio>
 #include <limits>
 
 void inicializarCola(Cola& cola) {
@@ -177,16 +178,22 @@ static void registrarSolicitud(Cola& cola, Ciudad* ciudades, Pasajero* pasajeros
     }
 }
 
-static void atenderSiguiente(Cola& cola, Ciudad* ciudades, Pasajero* pasajeros, Historial*& historial, bool cancelar) {
+ResultadoSolicitud procesarSiguienteSolicitud(Cola& cola, Ciudad* ciudades, Pasajero* pasajeros, Historial*& historial, bool cancelar) {
+    ResultadoSolicitud salida;
+    salida.procesada = false;
+    salida.resultado = "";
+    salida.detalle = "";
+    salida.texto = "";
+
     if (cola.frente == NULL) {
-        cout << "\nNo hay solicitudes pendientes.\n";
-        return;
+        salida.texto = "No hay solicitudes pendientes.";
+        return salida;
     }
 
     Solicitud solicitud;
     if (!sacarFrente(cola, solicitud)) {
-        cout << "\nNo hay solicitudes pendientes.\n";
-        return;
+        salida.texto = "No hay solicitudes pendientes.";
+        return salida;
     }
 
     Pasajero* pasajero = buscarPasajero(pasajeros, solicitud.documento);
@@ -194,10 +201,6 @@ static void atenderSiguiente(Cola& cola, Ciudad* ciudades, Pasajero* pasajeros, 
     string resultado = "RECHAZADA";
     double distancia = 0;
     string detalle = "No existe un camino entre las ciudades.";
-
-    cout << "\nProcesando solicitud #" << solicitud.id << endl;
-    cout << "Pasajero: " << nombre << " (" << solicitud.documento << ")\n";
-    cout << "Recorrido solicitado: " << solicitud.origen << " -> " << solicitud.destino << endl;
 
     if (cancelar) {
         resultado = "CANCELADA";
@@ -216,11 +219,27 @@ static void atenderSiguiente(Cola& cola, Ciudad* ciudades, Pasajero* pasajeros, 
     agregarHistorial(historial, solicitud.id, solicitud.documento, nombre, solicitud.origen,
                      solicitud.destino, distancia, solicitud.fecha, resultado);
 
-    cout << "Detalle: " << detalle << endl;
+    char numero[32];
+    sprintf(numero, "%d", solicitud.id);
+
+    salida.procesada = true;
+    salida.resultado = resultado;
+    salida.detalle = detalle;
+    salida.texto = "Solicitud #";
+    salida.texto += numero;
+    salida.texto += "\nPasajero: " + nombre + " (" + solicitud.documento + ")\n";
+    salida.texto += "Recorrido solicitado: " + solicitud.origen + " -> " + solicitud.destino + "\n";
+    salida.texto += "Detalle: " + detalle + "\n";
     if (resultado == "ATENDIDA") {
-        cout << "Distancia asignada: " << textoDistancia(distancia) << " km\n";
+        salida.texto += "Distancia asignada: " + textoDistancia(distancia) + " km\n";
     }
-    cout << "Resultado: " << resultado << endl;
+    salida.texto += "Resultado: " + resultado;
+    return salida;
+}
+
+static void atenderSiguiente(Cola& cola, Ciudad* ciudades, Pasajero* pasajeros, Historial*& historial, bool cancelar) {
+    ResultadoSolicitud salida = procesarSiguienteSolicitud(cola, ciudades, pasajeros, historial, cancelar);
+    cout << "\n" << salida.texto << endl;
 }
 
 void menuCola(Cola& cola, Ciudad* ciudades, Pasajero* pasajeros, Historial*& historial) {

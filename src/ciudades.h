@@ -23,7 +23,7 @@ struct Ciudad {
 void registrarCiudad(Ciudad*& inicio);
 void listarCiudades(Ciudad* inicio);
 Ciudad* buscarCiudad(Ciudad* inicio, string nombre);
-void eliminarCiudad(Ciudad*& inicio);
+int eliminarCiudadPorNombre(Ciudad*& inicio, const string& nombre);
 void agregarConexion(Ciudad* inicio);
 void listarConexiones(Ciudad* inicio);
 void menuCiudades(Ciudad*& inicio);

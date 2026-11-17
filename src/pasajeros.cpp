@@ -137,6 +137,48 @@ int contarPasajeros(Pasajero* inicio) {
     return total;
 }
 
+bool actualizarPasajeroDatos(Pasajero* inicio, const string& documento, const string& nombre, int edad, const string& telefono) {
+    Pasajero* actual = buscarPasajero(inicio, documento);
+    string nombreLimpio = trim(nombre);
+    string telefonoLimpio = trim(telefono);
+
+    if (actual == NULL || nombreLimpio.empty() || edad <= 0) {
+        return false;
+    }
+    if (contieneSeparador(nombreLimpio) || contieneSeparador(telefonoLimpio)) {
+        return false;
+    }
+
+    actual->nombre = nombreLimpio;
+    actual->edad = edad;
+    actual->telefono = telefonoLimpio;
+    return true;
+}
+
+bool eliminarPasajeroPorDocumento(Pasajero*& inicio, const string& documentoBuscado) {
+    string documento = trim(documentoBuscado);
+    Pasajero* actual = inicio;
+    Pasajero* anterior = NULL;
+
+    while (actual != NULL && actual->documento != documento) {
+        anterior = actual;
+        actual = actual->siguiente;
+    }
+
+    if (actual == NULL) {
+        return false;
+    }
+
+    if (anterior == NULL) {
+        inicio = actual->siguiente;
+    } else {
+        anterior->siguiente = actual->siguiente;
+    }
+
+    delete actual;
+    return true;
+}
+
 // Actualizar pasajero. Los cambios se aplican solo si todos los datos son validos.
 void actualizarPasajero(Pasajero* inicio) {
     string documento = leerTexto("\nIngrese el documento del pasajero: ");
@@ -149,33 +191,25 @@ void actualizarPasajero(Pasajero* inicio) {
 
     cout << "Nombre actual: " << actual->nombre << endl;
     string nombre = leerTexto("Nuevo nombre: ");
-    if (nombre.empty()) {
-        cout << "El nombre no puede estar vacio.\n";
-        return;
-    }
-    if (contieneSeparador(nombre)) {
-        cout << "El nombre no puede contener el caracter |.\n";
-        return;
-    }
-
     int edad = 0;
     if (!leerEntero("Nueva edad: ", edad)) {
         return;
     }
-    if (edad <= 0) {
-        cout << "La edad debe ser mayor que cero.\n";
-        return;
-    }
-
     string telefono = leerTexto("Nuevo telefono: ");
-    if (contieneSeparador(telefono)) {
-        cout << "El telefono no puede contener el caracter |.\n";
+
+    if (!actualizarPasajeroDatos(inicio, documento, nombre, edad, telefono)) {
+        if (nombre.empty()) {
+            cout << "El nombre no puede estar vacio.\n";
+        } else if (contieneSeparador(nombre)) {
+            cout << "El nombre no puede contener el caracter |.\n";
+        } else if (edad <= 0) {
+            cout << "La edad debe ser mayor que cero.\n";
+        } else {
+            cout << "El telefono no puede contener el caracter |.\n";
+        }
         return;
     }
 
-    actual->nombre = nombre;
-    actual->edad = edad;
-    actual->telefono = telefono;
     cout << "Pasajero actualizado correctamente.\n";
 }
 
@@ -187,26 +221,11 @@ void eliminarPasajero(Pasajero*& inicio) {
     }
 
     string documento = leerTexto("\nIngrese el documento del pasajero: ");
-    Pasajero* actual = inicio;
-    Pasajero* anterior = NULL;
-
-    while (actual != NULL && actual->documento != documento) {
-        anterior = actual;
-        actual = actual->siguiente;
-    }
-
-    if (actual == NULL) {
+    if (!eliminarPasajeroPorDocumento(inicio, documento)) {
         cout << "El pasajero no existe.\n";
         return;
     }
 
-    if (anterior == NULL) {
-        inicio = actual->siguiente;
-    } else {
-        anterior->siguiente = actual->siguiente;
-    }
-
-    delete actual;
     cout << "Pasajero eliminado correctamente.\n";
 }
 

@@ -5,35 +5,61 @@
 #include <limits>
 #include <sstream>
 
-static const char* CARPETA = "datos";
-static const char* ARCHIVO_CIUDADES = "datos/ciudades.txt";
-static const char* ARCHIVO_RUTAS = "datos/rutas.txt";
-static const char* ARCHIVO_PASAJEROS = "datos/pasajeros.txt";
-static const char* ARCHIVO_COLA = "datos/cola.txt";
-static const char* ARCHIVO_HISTORIAL = "datos/historial.txt";
+static string carpetaDatos = "datos";
+static string archCiudades;
+static string archRutas;
+static string archPasajeros;
+static string archCola;
+static string archHistorial;
+static string mensajeArchivo;
+
+static void asegurarRutas() {
+    if (!archCiudades.empty()) {
+        return;
+    }
+    archCiudades = carpetaDatos + "/ciudades.txt";
+    archRutas = carpetaDatos + "/rutas.txt";
+    archPasajeros = carpetaDatos + "/pasajeros.txt";
+    archCola = carpetaDatos + "/cola.txt";
+    archHistorial = carpetaDatos + "/historial.txt";
+}
+
+void establecerCarpetaDatos(const string& carpeta) {
+    carpetaDatos = carpeta;
+    archCiudades = "";
+    asegurarRutas();
+}
+
+string obtenerCarpetaDatos() {
+    asegurarRutas();
+    return carpetaDatos;
+}
+
+string obtenerMensajeArchivo() {
+    return mensajeArchivo;
+}
 
 static bool esComentario(const string& linea) {
     return linea.empty() || linea[0] == '#';
 }
 
-static void escribirError(const string& archivo) {
-    cout << "No se pudo escribir " << archivo << ".\n";
-}
-
 bool guardarInformacion(Ciudad* ciudades, Pasajero* pasajeros, const Cola& cola, Historial* historial) {
-    if (!crearCarpetaDatos(CARPETA)) {
-        cout << "No se pudo crear la carpeta datos.\n";
+    asegurarRutas();
+    if (!crearCarpetaDatos(carpetaDatos.c_str())) {
+        mensajeArchivo = "No se pudo crear la carpeta de datos.";
+        cout << mensajeArchivo << "\n";
         return false;
     }
 
-    ofstream ciudadesOut(ARCHIVO_CIUDADES);
-    ofstream rutasOut(ARCHIVO_RUTAS);
-    ofstream pasajerosOut(ARCHIVO_PASAJEROS);
-    ofstream colaOut(ARCHIVO_COLA);
-    ofstream historialOut(ARCHIVO_HISTORIAL);
+    ofstream ciudadesOut(archCiudades.c_str());
+    ofstream rutasOut(archRutas.c_str());
+    ofstream pasajerosOut(archPasajeros.c_str());
+    ofstream colaOut(archCola.c_str());
+    ofstream historialOut(archHistorial.c_str());
 
     if (!ciudadesOut || !rutasOut || !pasajerosOut || !colaOut || !historialOut) {
-        cout << "No se pudieron abrir los archivos de salida.\n";
+        mensajeArchivo = "No se pudieron abrir los archivos de salida.";
+        cout << mensajeArchivo << "\n";
         return false;
     }
 
@@ -80,11 +106,13 @@ bool guardarInformacion(Ciudad* ciudades, Pasajero* pasajeros, const Cola& cola,
     }
 
     if (!ciudadesOut || !rutasOut || !pasajerosOut || !colaOut || !historialOut) {
-        escribirError(CARPETA);
+        mensajeArchivo = "No se pudo escribir en " + carpetaDatos + ".";
+        cout << mensajeArchivo << "\n";
         return false;
     }
 
-    cout << "Informacion guardada correctamente en la carpeta datos.\n";
+    mensajeArchivo = "Informacion guardada correctamente en " + carpetaDatos + ".";
+    cout << mensajeArchivo << "\n";
     cout << "Ciudades: " << contarCiudades(ciudades)
          << " | Rutas: " << contarRutas(ciudades)
          << " | Pasajeros: " << contarPasajeros(pasajeros)
@@ -110,14 +138,16 @@ static double leerDoubleTexto(const string& texto, bool& ok) {
 }
 
 bool cargarInformacion(Ciudad*& ciudades, Pasajero*& pasajeros, Cola& cola, Historial*& historial) {
-    ifstream ciudadesIn(ARCHIVO_CIUDADES);
-    ifstream rutasIn(ARCHIVO_RUTAS);
-    ifstream pasajerosIn(ARCHIVO_PASAJEROS);
-    ifstream colaIn(ARCHIVO_COLA);
-    ifstream historialIn(ARCHIVO_HISTORIAL);
+    asegurarRutas();
+    ifstream ciudadesIn(archCiudades.c_str());
+    ifstream rutasIn(archRutas.c_str());
+    ifstream pasajerosIn(archPasajeros.c_str());
+    ifstream colaIn(archCola.c_str());
+    ifstream historialIn(archHistorial.c_str());
 
     if (!ciudadesIn || !rutasIn || !pasajerosIn || !colaIn || !historialIn) {
-        cout << "No se encontro informacion completa en la carpeta datos.\n";
+        mensajeArchivo = "No se encontro informacion completa en " + carpetaDatos + ".";
+        cout << mensajeArchivo << "\n";
         cout << "Guarde el sistema al menos una vez o conserve los archivos de ejemplo.\n";
         return false;
     }
@@ -253,7 +283,8 @@ bool cargarInformacion(Ciudad*& ciudades, Pasajero*& pasajeros, Cola& cola, Hist
         }
     }
 
-    cout << "Informacion cargada correctamente desde la carpeta datos.\n";
+    mensajeArchivo = "Informacion cargada correctamente desde " + carpetaDatos + ".";
+    cout << mensajeArchivo << "\n";
     cout << "Ciudades: " << contarCiudades(ciudades)
          << " | Rutas: " << contarRutas(ciudades)
          << " | Pasajeros: " << contarPasajeros(pasajeros)
@@ -266,13 +297,10 @@ bool cargarInformacion(Ciudad*& ciudades, Pasajero*& pasajeros, Cola& cola, Hist
 }
 
 static void mostrarArchivos() {
-    cout << "\nLos archivos de SITRAC se guardan junto al programa, en la carpeta datos:\n";
-    cout << "- " << ARCHIVO_CIUDADES << endl;
-    cout << "- " << ARCHIVO_RUTAS << endl;
-    cout << "- " << ARCHIVO_PASAJEROS << endl;
-    cout << "- " << ARCHIVO_COLA << endl;
-    cout << "- " << ARCHIVO_HISTORIAL << endl;
-    cout << "Ejecute el programa desde la carpeta del proyecto para encontrarlos.\n";
+    cout << "\nLos archivos de SITRAC se guardan en:\n";
+    cout << obtenerCarpetaDatos() << endl;
+    cout << "- ciudades.txt, rutas.txt, pasajeros.txt, cola.txt e historial.txt\n";
+    cout << "En la aplicacion de Windows esa carpeta queda junto al ejecutable.\n";
 }
 
 void menuArchivos(Ciudad*& ciudades, Pasajero*& pasajeros, Cola& cola, Historial*& historial) {

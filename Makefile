@@ -1,19 +1,21 @@
 CXX = g++
 CXXFLAGS = -std=c++98 -Wall -Wextra -pedantic -O2
-SRC = src/main.cpp src/util.cpp src/ciudades.cpp src/pasajeros.cpp \
-      src/rutas.cpp src/cola.cpp src/historial.cpp src/busquedas.cpp \
-      src/reportes.cpp src/archivos.cpp
-TARGET = sitrac
+CORE = src/util.cpp src/ciudades.cpp src/pasajeros.cpp src/rutas.cpp \
+       src/cola.cpp src/historial.cpp src/busquedas.cpp src/reportes.cpp \
+       src/archivos.cpp
 
-.PHONY: all clean test
+.PHONY: test win clean
 
-all: $(TARGET)
+# La aplicacion de escritorio se abre con SITRAC.dev en Dev-C++.
+# Este objetivo solo comprueba la logica en Linux.
+test:
+	$(CXX) $(CXXFLAGS) -Werror pruebas/logica_main.cpp $(CORE) -o pruebas/logica
+	./pruebas/logica
 
-$(TARGET): $(SRC)
-	$(CXX) $(CXXFLAGS) $(SRC) -o $(TARGET)
+# Compilacion cruzada opcional, si MinGW esta instalado.
+win:
+	x86_64-w64-mingw32-g++ -std=c++98 -Wall -Wextra -O2 -mwindows \
+		src/main.cpp $(CORE) -o SITRAC.exe -lcomctl32 -lgdi32 -static-libgcc
 
 clean:
-	rm -f $(TARGET) $(TARGET).exe src/*.o *.o
-
-test: $(TARGET)
-	sh pruebas/probar.sh
+	rm -f pruebas/logica SITRAC.exe src/*.o *.o

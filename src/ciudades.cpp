@@ -203,14 +203,13 @@ bool eliminarConexionDatos(Ciudad* inicio, const string& origen, const string& d
     return true;
 }
 
-// Eliminar una ciudad y las aristas que la mencionan
-void eliminarCiudad(Ciudad*& inicio) {
-    if (inicio == NULL) {
-        cout << "\nNo hay ciudades para eliminar.\n";
-        return;
-    }
+// 0 eliminada, 1 no hay ciudades, 2 no existe
+int eliminarCiudadPorNombre(Ciudad*& inicio, const string& nombreBuscado) {
+    string nombre = trim(nombreBuscado);
 
-    string nombre = leerTexto("\nIngrese el nombre de la ciudad que desea eliminar: ");
+    if (inicio == NULL) {
+        return 1;
+    }
 
     Ciudad* actual = inicio;
     Ciudad* anterior = NULL;
@@ -221,8 +220,7 @@ void eliminarCiudad(Ciudad*& inicio) {
     }
 
     if (actual == NULL) {
-        cout << "La ciudad no existe.\n";
-        return;
+        return 2;
     }
 
     if (anterior == NULL) {
@@ -265,6 +263,24 @@ void eliminarCiudad(Ciudad*& inicio) {
     }
 
     delete actual;
+    return 0;
+}
+
+// Eliminar una ciudad y las aristas que la mencionan
+void eliminarCiudad(Ciudad*& inicio) {
+    if (inicio == NULL) {
+        cout << "\nNo hay ciudades para eliminar.\n";
+        return;
+    }
+
+    string nombre = leerTexto("\nIngrese el nombre de la ciudad que desea eliminar: ");
+    int resultado = eliminarCiudadPorNombre(inicio, nombre);
+
+    if (resultado == 2) {
+        cout << "La ciudad no existe.\n";
+        return;
+    }
+
     cout << "Ciudad y sus conexiones eliminadas correctamente.\n";
 }
 

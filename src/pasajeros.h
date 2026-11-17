@@ -18,8 +18,8 @@ struct Pasajero {
 void registrarPasajero(Pasajero*& inicio);
 void listarPasajeros(Pasajero* inicio);
 Pasajero* buscarPasajero(Pasajero* inicio, string documento);
-void actualizarPasajero(Pasajero* inicio);
-void eliminarPasajero(Pasajero*& inicio);
+bool actualizarPasajeroDatos(Pasajero* inicio, const string& documento, const string& nombre, int edad, const string& telefono);
+bool eliminarPasajeroPorDocumento(Pasajero*& inicio, const string& documento);
 void menuPasajeros(Pasajero*& inicio);
 
 int contarPasajeros(Pasajero* inicio);
