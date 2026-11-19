@@ -18,6 +18,10 @@
 #define SB_SETTEXTW (WM_USER + 11)
 #endif
 
+#ifndef LVS_EX_DOUBLEBUFFER
+#define LVS_EX_DOUBLEBUFFER 0x00010000
+#endif
+
 #ifndef EM_SETCUEBANNER
 #define EM_SETCUEBANNER 0x1501
 #endif
@@ -230,7 +234,7 @@ void columna(HWND lista, int indice, const wchar_t* texto, int ancho) {
     col.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
     col.pszText = (LPWSTR)texto;
     col.cx = ancho;
-    col.iSubitem = indice;
+    col.iSubItem = indice;
     SendMessageW(lista, LVM_INSERTCOLUMNW, (WPARAM)indice, (LPARAM)&col);
 }
 
