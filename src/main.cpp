@@ -26,6 +26,14 @@
 #define EM_SETCUEBANNER 0x1501
 #endif
 
+#ifndef IDC_HAND
+#define IDC_HAND MAKEINTRESOURCE(32649)
+#endif
+
+#ifndef FW_SEMIBOLD
+#define FW_SEMIBOLD 600
+#endif
+
 namespace {
 
 enum {
@@ -93,12 +101,14 @@ struct Pieza {
 
 HINSTANCE gInst = NULL;
 HWND gVentana = NULL;
-HWND gEncabezado = NULL;
-HWND gTabs = NULL;
 HWND gLista = NULL;
 HWND gLista2 = NULL;
 HWND gResultado = NULL;
 HWND gEstado = NULL;
+HWND gMetricas = NULL;
+HWND gTarjetaForm = NULL;
+HWND gTarjetaLista = NULL;
+HWND gNav[8];
 HWND gLblCiudad = NULL;
 HWND gLblConexion = NULL;
 HWND gLblRuta = NULL;
@@ -106,6 +116,12 @@ HWND gLblPasajero = NULL;
 HWND gLblCola = NULL;
 HFONT gFuente = NULL;
 HFONT gFuenteTitulo = NULL;
+HFONT gFuenteMarca = NULL;
+HFONT gFuenteMini = NULL;
+HFONT gFuenteBoton = NULL;
+HBRUSH gBrochaFondo = NULL;
+HBRUSH gBrochaBlanca = NULL;
+WNDPROC gProcEdit = NULL;
 int gPestana = TAB_CIU;
 bool gCargando = false;
 string gFiltroHistorial = "";
@@ -117,6 +133,72 @@ Historial* gHistorial = NULL;
 
 Pieza gPiezas[80];
 int gNPiezas = 0;
+
+const int NAV_ANCHO = 252;
+const int PIE_ALTO = 42;
+const int IDC_NAV = 1900;
+
+struct Cromo {
+    int modo;
+    int tab;
+    int hover;
+    int down;
+};
+
+COLORREF mezclar(COLORREF a, COLORREF b, int t) {
+    if (t < 0) {
+        t = 0;
+    }
+    if (t > 255) {
+        t = 255;
+    }
+    int rojo = GetRValue(a) + (GetRValue(b) - GetRValue(a)) * t / 255;
+    int verde = GetGValue(a) + (GetGValue(b) - GetGValue(a)) * t / 255;
+    int azul = GetBValue(a) + (GetBValue(b) - GetBValue(a)) * t / 255;
+    return RGB(rojo, verde, azul);
+}
+
+COLORREF colorBarra(int y, int alto) {
+    if (alto < 1) {
+        alto = 1;
+    }
+    if (y < 0) {
+        y = 0;
+    }
+    if (y > alto) {
+        y = alto;
+    }
+    return mezclar(RGB(96, 32, 168), RGB(28, 8, 52), y * 255 / alto);
+}
+
+void rellenarDegradado(HDC dc, RECT rect, COLORREF arriba, COLORREF abajo) {
+    int alto = rect.bottom - rect.top;
+    if (alto < 1) {
+        return;
+    }
+    for (int y = 0; y < alto; y++) {
+        HBRUSH brocha = CreateSolidBrush(mezclar(arriba, abajo, y * 255 / alto));
+        RECT linea;
+        linea.left = rect.left;
+        linea.right = rect.right;
+        linea.top = rect.top + y;
+        linea.bottom = linea.top + 1;
+        FillRect(dc, &linea, brocha);
+        DeleteObject(brocha);
+    }
+}
+
+void redondear(HDC dc, RECT rect, COLORREF relleno, COLORREF borde, int curva) {
+    HBRUSH brocha = CreateSolidBrush(relleno);
+    HPEN pluma = CreatePen(PS_SOLID, 1, borde);
+    HGDIOBJ viejaBrocha = SelectObject(dc, brocha);
+    HGDIOBJ viejaPluma = SelectObject(dc, pluma);
+    RoundRect(dc, rect.left, rect.top, rect.right, rect.bottom, curva, curva);
+    SelectObject(dc, viejaBrocha);
+    SelectObject(dc, viejaPluma);
+    DeleteObject(brocha);
+    DeleteObject(pluma);
+}
 
 HWND anotar(HWND hwnd, int tab) {
     if (hwnd != NULL && gNPiezas < 80) {
@@ -168,7 +250,10 @@ void ponerTexto(HWND hwnd, const string& texto) {
 }
 
 void estado(const wstring& texto) {
-    SendMessageW(gEstado, SB_SETTEXTW, 0, (LPARAM)texto.c_str());
+    if (gEstado != NULL) {
+        SetWindowTextW(gEstado, texto.c_str());
+        InvalidateRect(gEstado, NULL, FALSE);
+    }
 }
 
 void estado(const string& texto) {
@@ -203,18 +288,55 @@ HWND etiqueta(int tab, const wchar_t* texto, int id) {
     return anotar(hwnd, tab);
 }
 
+LRESULT CALLBACK EditTemaProc(HWND hwnd, UINT mensaje, WPARAM wParam, LPARAM lParam) {
+    if (mensaje == WM_NCPAINT && gProcEdit != NULL) {
+        CallWindowProcW(gProcEdit, hwnd, mensaje, wParam, lParam);
+        HDC dc = GetWindowDC(hwnd);
+        RECT rect;
+        GetWindowRect(hwnd, &rect);
+        OffsetRect(&rect, -rect.left, -rect.top);
+        HBRUSH brocha = CreateSolidBrush(RGB(186, 156, 224));
+        FrameRect(dc, &rect, brocha);
+        DeleteObject(brocha);
+        InflateRect(&rect, -1, -1);
+        HBRUSH interior = CreateSolidBrush(RGB(255, 255, 255));
+        FrameRect(dc, &rect, interior);
+        DeleteObject(interior);
+        ReleaseDC(hwnd, dc);
+        return 0;
+    }
+    return CallWindowProcW(gProcEdit, hwnd, mensaje, wParam, lParam);
+}
+
 HWND caja(int tab, int id, bool multilinea) {
     DWORD estilo = WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL;
     if (multilinea) {
         estilo = WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL | ES_READONLY;
     }
     HWND hwnd = CreateWindowExW(0, L"EDIT", L"", estilo, 0, 0, 10, 10, gVentana, (HMENU)(INT_PTR)id, gInst, NULL);
+    if (gProcEdit == NULL) {
+        gProcEdit = (WNDPROC)GetWindowLongPtrW(hwnd, GWLP_WNDPROC);
+    }
+    SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)EditTemaProc);
     return anotar(hwnd, tab);
 }
 
 HWND boton(int tab, int id, const wchar_t* texto) {
-    HWND hwnd = CreateWindowExW(0, L"BUTTON", texto, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-                                0, 0, 10, 10, gVentana, (HMENU)(INT_PTR)id, gInst, NULL);
+    Cromo* cromo = new Cromo();
+    cromo->modo = 0;
+    cromo->tab = tab;
+    cromo->hover = 0;
+    cromo->down = 0;
+    if (id == IDC_CIU_ELI || id == IDC_CIU_QUIT || id == IDC_RUT_ELI || id == IDC_PAS_ELI || id == IDC_COL_CAN) {
+        cromo->modo = 2;
+    } else if (id == IDC_HIS_TODO || id == IDC_ARC_CAR || id == IDC_PAS_ACT) {
+        cromo->modo = 1;
+    }
+    HWND hwnd = CreateWindowExW(0, L"SITRACCromo", texto, WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+                                0, 0, 10, 10, gVentana, (HMENU)(INT_PTR)id, gInst, cromo);
+    if (hwnd == NULL) {
+        delete cromo;
+    }
     return anotar(hwnd, tab);
 }
 
@@ -382,6 +504,9 @@ void cargarLista() {
     }
 
     gCargando = false;
+    if (gMetricas != NULL) {
+        InvalidateRect(gMetricas, NULL, FALSE);
+    }
 }
 
 void mostrarResumenArchivos() {
@@ -399,7 +524,7 @@ void mostrarResumenArchivos() {
 void mostrarPestana(int pestana) {
     gPestana = pestana;
     for (int i = 0; i < gNPiezas; i++) {
-        ShowWindow(gPiezas[i].hwnd, gPiezas[i].tab == pestana ? SW_SHOW : SW_HIDE);
+        ShowWindow(gPiezas[i].hwnd, (gPiezas[i].tab == pestana || gPiezas[i].tab < 0) ? SW_SHOW : SW_HIDE);
     }
 
     bool usaLista = pestana != TAB_BUS && pestana != TAB_REP && pestana != TAB_ARC;
@@ -418,6 +543,17 @@ void mostrarPestana(int pestana) {
 
     if (usaLista) {
         cargarLista();
+    }
+    if (gMetricas != NULL) {
+        InvalidateRect(gMetricas, NULL, FALSE);
+    }
+    for (int n = 0; n < 8; n++) {
+        if (gNav[n] != NULL) {
+            InvalidateRect(gNav[n], NULL, FALSE);
+        }
+    }
+    if (gVentana != NULL) {
+        InvalidateRect(gVentana, NULL, FALSE);
     }
     estado(L"SITRAC listo");
 }
@@ -750,140 +886,176 @@ void buscarGui() {
 }
 
 void organizar(int ancho, int alto) {
-    int estadoAlto = 24;
-    MoveWindow(gEncabezado, 0, 0, ancho, 72, TRUE);
-    MoveWindow(gTabs, 12, 80, ancho - 24, alto - 108, TRUE);
-    SendMessageW(gEstado, WM_SIZE, 0, 0);
-
-    RECT pagina;
-    GetClientRect(gTabs, &pagina);
-    TabCtrl_AdjustRect(gTabs, FALSE, &pagina);
-    int x = 12 + pagina.left + 8;
-    int y = 80 + pagina.top + 8;
-    int anchoPagina = pagina.right - pagina.left - 16;
-    int altoPagina = pagina.bottom - pagina.top - 16;
-    if (anchoPagina < 200) {
-        anchoPagina = 200;
-    }
-    if (altoPagina < 120) {
-        altoPagina = 120;
+    if (gNav[0] == NULL || gTarjetaForm == NULL || gLista == NULL || gEstado == NULL || gMetricas == NULL) {
+        return;
     }
 
-    int formulario = 330;
-    int listaX = x + formulario + 12;
-    int listaAncho = ancho - listaX - 20;
-    if (listaAncho < 180) {
-        listaAncho = 180;
+    int margen = 22;
+    int x = NAV_ANCHO + margen;
+    int anchoUtil = ancho - x - margen;
+    if (anchoUtil < 280) {
+        anchoUtil = 280;
     }
 
-    MoveWindow(gLblCiudad, x, y, formulario - 8, 20, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_CIU_NOMBRE), x, y + 24, formulario - 8, 24, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_CIU_REG), x, y + 56, 150, 28, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_CIU_ELI), x + 158, y + 56, 160, 28, TRUE);
-    MoveWindow(gLblConexion, x, y + 98, formulario - 8, 20, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_CIU_ORI), x, y + 124, formulario - 8, 24, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_CIU_DES), x, y + 156, formulario - 8, 24, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_CIU_KM), x, y + 188, formulario - 8, 24, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_CIU_ADD), x, y + 220, 150, 28, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_CIU_QUIT), x + 158, y + 220, 160, 28, TRUE);
+    MoveWindow(gEstado, 0, alto - PIE_ALTO, ancho, PIE_ALTO, TRUE);
+    for (int i = 0; i < 8; i++) {
+        MoveWindow(gNav[i], 14, 128 + i * 48, NAV_ANCHO - 28, 42, TRUE);
+    }
 
-    MoveWindow(gLblRuta, x, y, formulario - 8, 20, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_RUT_ORI), x, y + 24, formulario - 8, 24, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_RUT_DES), x, y + 56, formulario - 8, 24, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_RUT_KM), x, y + 88, formulario - 8, 24, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_RUT_IDA), x, y + 118, formulario - 8, 22, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_RUT_REG), x, y + 148, 150, 28, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_RUT_ELI), x + 158, y + 148, 160, 28, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_RUT_CAM), x, y + 184, formulario - 8, 28, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_RUT_RES), x, y + 220, formulario - 8, 90, TRUE);
+    int metricY = 78;
+    int metricH = 82;
+    MoveWindow(gMetricas, x, metricY, anchoUtil, metricH, TRUE);
 
-    MoveWindow(gLblPasajero, x, y, formulario - 8, 20, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_PAS_DOC), x, y + 24, formulario - 8, 24, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_PAS_NOM), x, y + 56, formulario - 8, 24, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_PAS_EDAD), x, y + 88, 100, 24, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_PAS_TEL), x + 108, y + 88, formulario - 116, 24, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_PAS_REG), x, y + 122, 150, 28, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_PAS_ACT), x + 158, y + 122, 160, 28, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_PAS_ELI), x, y + 156, 150, 28, TRUE);
+    int cuerpoY = metricY + metricH + 16;
+    int cuerpoH = alto - PIE_ALTO - cuerpoY - 16;
+    if (cuerpoH < 180) {
+        cuerpoH = 180;
+    }
 
-    MoveWindow(gLblCola, x, y, formulario - 8, 20, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_COL_DOC), x, y + 24, formulario - 8, 24, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_COL_ORI), x, y + 56, formulario - 8, 24, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_COL_DES), x, y + 88, formulario - 8, 24, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_COL_FEC), x, y + 120, formulario - 8, 24, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_COL_ADD), x, y + 154, formulario - 8, 28, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_COL_ATE), x, y + 190, 150, 28, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_COL_CAN), x + 158, y + 190, 160, 28, TRUE);
+    bool formulario = gPestana == TAB_CIU || gPestana == TAB_RUT || gPestana == TAB_PAS || gPestana == TAB_COL;
+    int formW = formulario ? 390 : 0;
+    if (formulario && formW > anchoUtil - 220) {
+        formW = anchoUtil - 220;
+    }
+    int listaX = formulario ? x + formW + 16 : x;
+    int listaW = anchoUtil - (formulario ? formW + 16 : 0);
 
-    MoveWindow(GetDlgItem(gVentana, IDC_HIS_DOC), x, y + 4, 220, 24, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_HIS_FIL), x + 228, y + 2, 120, 28, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_HIS_TODO), x + 356, y + 2, 140, 28, TRUE);
+    ShowWindow(gTarjetaForm, formulario ? SW_SHOW : SW_HIDE);
+    ShowWindow(gTarjetaLista, SW_SHOW);
+    if (formulario) {
+        MoveWindow(gTarjetaForm, x, cuerpoY, formW, cuerpoH, TRUE);
+    }
+    MoveWindow(gTarjetaLista, listaX, cuerpoY, listaW, cuerpoH, TRUE);
 
-    MoveWindow(GetDlgItem(gVentana, IDC_BUS_TIPO), x, y + 4, 280, 200, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_BUS_A), x + 292, y + 6, 220, 24, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_BUS_B), x + 520, y + 6, 220, 24, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_BUS_GO), x + 750, y + 4, 120, 28, TRUE);
+    int fx = x + 22;
+    int fy = cuerpoY + 20;
+    int fw = formW - 44;
+    if (fw < 120) {
+        fw = 120;
+    }
 
-    MoveWindow(GetDlgItem(gVentana, IDC_REP_ACT), x, y + 4, 180, 28, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_ARC_GUA), x, y + 8, 180, 32, TRUE);
-    MoveWindow(GetDlgItem(gVentana, IDC_ARC_CAR), x + 192, y + 8, 180, 32, TRUE);
+    MoveWindow(gLblCiudad, fx, fy, fw, 22, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_CIU_NOMBRE), fx, fy + 26, fw, 32, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_CIU_REG), fx, fy + 68, (fw - 10) / 2, 36, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_CIU_ELI), fx + (fw - 10) / 2 + 10, fy + 68, (fw - 10) / 2, 36, TRUE);
+    MoveWindow(gLblConexion, fx, fy + 122, fw, 22, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_CIU_ORI), fx, fy + 148, fw, 32, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_CIU_DES), fx, fy + 188, fw, 32, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_CIU_KM), fx, fy + 228, fw, 32, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_CIU_ADD), fx, fy + 272, (fw - 10) / 2, 36, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_CIU_QUIT), fx + (fw - 10) / 2 + 10, fy + 272, (fw - 10) / 2, 36, TRUE);
 
-    int listaY = (gPestana == TAB_HIS) ? y + 40 : y;
-    int listaAlto = (gPestana == TAB_CIU) ? (altoPagina - 8) / 2 : alto - listaY - estadoAlto - 16;
+    MoveWindow(gLblRuta, fx, fy, fw, 22, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_RUT_ORI), fx, fy + 26, fw, 32, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_RUT_DES), fx, fy + 66, fw, 32, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_RUT_KM), fx, fy + 106, fw, 32, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_RUT_IDA), fx, fy + 146, fw, 24, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_RUT_REG), fx, fy + 178, (fw - 10) / 2, 36, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_RUT_ELI), fx + (fw - 10) / 2 + 10, fy + 178, (fw - 10) / 2, 36, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_RUT_CAM), fx, fy + 224, fw, 36, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_RUT_RES), fx, fy + 270, fw, cuerpoH - 300, TRUE);
+
+    MoveWindow(gLblPasajero, fx, fy, fw, 22, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_PAS_DOC), fx, fy + 26, fw, 32, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_PAS_NOM), fx, fy + 66, fw, 32, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_PAS_EDAD), fx, fy + 106, 110, 32, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_PAS_TEL), fx + 120, fy + 106, fw - 120, 32, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_PAS_REG), fx, fy + 152, (fw - 10) / 2, 36, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_PAS_ACT), fx + (fw - 10) / 2 + 10, fy + 152, (fw - 10) / 2, 36, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_PAS_ELI), fx, fy + 198, (fw - 10) / 2, 36, TRUE);
+
+    MoveWindow(gLblCola, fx, fy, fw, 22, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_COL_DOC), fx, fy + 26, fw, 32, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_COL_ORI), fx, fy + 66, fw, 32, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_COL_DES), fx, fy + 106, fw, 32, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_COL_FEC), fx, fy + 146, fw, 32, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_COL_ADD), fx, fy + 190, fw, 36, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_COL_ATE), fx, fy + 236, (fw - 10) / 2, 36, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_COL_CAN), fx + (fw - 10) / 2 + 10, fy + 236, (fw - 10) / 2, 36, TRUE);
+
+    int lx = listaX + 16;
+    int ly = cuerpoY + 16;
+    int lw = listaW - 32;
+    int lh = cuerpoH - 32;
+    if (lw < 80) {
+        lw = 80;
+    }
+
+    MoveWindow(GetDlgItem(gVentana, IDC_HIS_DOC), lx, ly, 230, 32, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_HIS_FIL), lx + 242, ly, 120, 34, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_HIS_TODO), lx + 372, ly, 140, 34, TRUE);
+
+    MoveWindow(GetDlgItem(gVentana, IDC_BUS_TIPO), lx, ly, 250, 220, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_BUS_A), lx + 264, ly + 2, 200, 32, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_BUS_B), lx + 474, ly + 2, 200, 32, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_BUS_GO), lx + 686, ly, 130, 36, TRUE);
+
+    MoveWindow(GetDlgItem(gVentana, IDC_REP_ACT), lx, ly, 210, 36, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_ARC_GUA), lx, ly, 170, 36, TRUE);
+    MoveWindow(GetDlgItem(gVentana, IDC_ARC_CAR), lx + 182, ly, 170, 36, TRUE);
+
+    int listaY = ly;
+    int listaAlto = lh;
     if (gPestana == TAB_HIS) {
-        listaAlto = alto - listaY - estadoAlto - 16;
+        listaY = ly + 48;
+        listaAlto = lh - 48;
     }
-    MoveWindow(gLista, (gPestana == TAB_HIS || gPestana == TAB_BUS) ? x : listaX, listaY,
-               (gPestana == TAB_HIS) ? anchoPagina : listaAncho, listaAlto, TRUE);
-    MoveWindow(gLista2, listaX, listaY + listaAlto + 8, listaAncho, altoPagina - listaAlto - 8, TRUE);
+    if (gPestana == TAB_CIU) {
+        int mitad = (listaAlto - 12) / 2;
+        MoveWindow(gLista, lx, listaY, lw, mitad, TRUE);
+        MoveWindow(gLista2, lx, listaY + mitad + 12, lw, listaAlto - mitad - 12, TRUE);
+    } else {
+        MoveWindow(gLista, lx, listaY, lw, listaAlto, TRUE);
+    }
 
-    int resultadoY = (gPestana == TAB_BUS || gPestana == TAB_REP) ? y + 42 : y + 52;
-    MoveWindow(gResultado, x, resultadoY, anchoPagina, alto - resultadoY - estadoAlto - 16, TRUE);
-    (void)estadoAlto;
-    (void)altoPagina;
+    int resultadoY = ly + 50;
+    MoveWindow(gResultado, lx, resultadoY, lw, lh - 50, TRUE);
 }
 
 void crearControles() {
-    gEncabezado = CreateWindowExW(0, L"SITRACEncabezado", L"", WS_CHILD | WS_VISIBLE, 0, 0, 10, 10, gVentana, NULL, gInst, NULL);
-    gTabs = CreateWindowExW(0, WC_TABCONTROLW, L"", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS, 0, 0, 10, 10, gVentana, (HMENU)IDC_TAB, gInst, NULL);
+    gTarjetaForm = CreateWindowExW(0, L"SITRACTarjeta", L"", WS_CHILD | WS_VISIBLE, 0, 0, 10, 10, gVentana, NULL, gInst, NULL);
+    gTarjetaLista = CreateWindowExW(0, L"SITRACTarjeta", L"", WS_CHILD | WS_VISIBLE, 0, 0, 10, 10, gVentana, NULL, gInst, NULL);
+    gMetricas = CreateWindowExW(0, L"SITRACMetricas", L"", WS_CHILD | WS_VISIBLE, 0, 0, 10, 10, gVentana, NULL, gInst, NULL);
 
-    const wchar_t* titulos[8];
-    titulos[0] = L"Ciudades";
-    titulos[1] = L"Rutas";
-    titulos[2] = L"Pasajeros";
-    titulos[3] = L"Cola";
-    titulos[4] = L"Historial";
-    titulos[5] = L"B\u00fasquedas";
-    titulos[6] = L"Reportes";
-    titulos[7] = L"Archivos";
-    for (int i = 0; i < 8; i++) {
-        TCITEMW item;
-        ZeroMemory(&item, sizeof(item));
-        item.mask = TCIF_TEXT;
-        item.pszText = (LPWSTR)titulos[i];
-        SendMessageW(gTabs, TCM_INSERTITEMW, (WPARAM)i, (LPARAM)&item);
-    }
-
-    DWORD estiloLista = WS_CHILD | WS_VISIBLE | WS_BORDER | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS;
+    DWORD estiloLista = WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS;
     gLista = CreateWindowExW(0, WC_LISTVIEWW, L"", estiloLista, 0, 0, 10, 10, gVentana, (HMENU)IDC_LISTA, gInst, NULL);
     gLista2 = CreateWindowExW(0, WC_LISTVIEWW, L"", estiloLista, 0, 0, 10, 10, gVentana, (HMENU)IDC_LISTA2, gInst, NULL);
-    SendMessageW(gLista, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER);
-    SendMessageW(gLista2, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER);
+    SendMessageW(gLista, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
+    SendMessageW(gLista2, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
+    SendMessageW(gLista, LVM_SETBKCOLOR, 0, RGB(255, 255, 255));
+    SendMessageW(gLista2, LVM_SETBKCOLOR, 0, RGB(255, 255, 255));
+    SendMessageW(gLista, LVM_SETTEXTBKCOLOR, 0, RGB(255, 255, 255));
+    SendMessageW(gLista2, LVM_SETTEXTBKCOLOR, 0, RGB(255, 255, 255));
+    SendMessageW(gLista, LVM_SETTEXTCOLOR, 0, RGB(48, 22, 84));
+    SendMessageW(gLista2, LVM_SETTEXTCOLOR, 0, RGB(48, 22, 84));
+
+    HMODULE tema = LoadLibraryA("uxtheme.dll");
+    if (tema != NULL) {
+        typedef HRESULT (WINAPI *TemaFn)(HWND, LPCWSTR, LPCWSTR);
+        TemaFn quitar = (TemaFn)GetProcAddress(tema, "SetWindowTheme");
+        if (quitar != NULL) {
+            quitar(gLista, L"", L"");
+            quitar(gLista2, L"", L"");
+        }
+    }
 
     gResultado = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | WS_BORDER | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_VSCROLL,
                                  0, 0, 10, 10, gVentana, (HMENU)IDC_RESULTADO, gInst, NULL);
-    gEstado = CreateWindowExW(0, STATUSCLASSNAMEW, L"", WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP, 0, 0, 10, 10, gVentana, NULL, gInst, NULL);
+    if (gProcEdit == NULL) {
+        gProcEdit = (WNDPROC)GetWindowLongPtrW(gResultado, GWLP_WNDPROC);
+    }
+    SetWindowLongPtrW(gResultado, GWLP_WNDPROC, (LONG_PTR)EditTemaProc);
 
     gLblCiudad = etiqueta(TAB_CIU, L"Nombre de la ciudad", 0);
     caja(TAB_CIU, IDC_CIU_NOMBRE, false);
     boton(TAB_CIU, IDC_CIU_REG, L"Registrar ciudad");
     boton(TAB_CIU, IDC_CIU_ELI, L"Eliminar ciudad");
-    gLblConexion = etiqueta(TAB_CIU, L"Conexi\u00f3n entre ciudades", 0);
+    gLblConexion = etiqueta(TAB_CIU, L"Conexion entre ciudades", 0);
     caja(TAB_CIU, IDC_CIU_ORI, false);
     caja(TAB_CIU, IDC_CIU_DES, false);
     caja(TAB_CIU, IDC_CIU_KM, false);
-    boton(TAB_CIU, IDC_CIU_ADD, L"Agregar conexi\u00f3n");
-    boton(TAB_CIU, IDC_CIU_QUIT, L"Quitar conexi\u00f3n");
+    boton(TAB_CIU, IDC_CIU_ADD, L"Agregar conexion");
+    boton(TAB_CIU, IDC_CIU_QUIT, L"Quitar conexion");
     pista(GetDlgItem(gVentana, IDC_CIU_ORI), L"Ciudad de origen");
     pista(GetDlgItem(gVentana, IDC_CIU_DES), L"Ciudad de destino");
     pista(GetDlgItem(gVentana, IDC_CIU_KM), L"Distancia en km");
@@ -892,11 +1064,11 @@ void crearControles() {
     caja(TAB_RUT, IDC_RUT_ORI, false);
     caja(TAB_RUT, IDC_RUT_DES, false);
     caja(TAB_RUT, IDC_RUT_KM, false);
-    anotar(CreateWindowExW(0, L"BUTTON", L"Registrar tambi\u00e9n el regreso", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+    anotar(CreateWindowExW(0, L"BUTTON", L"Registrar tambien el regreso", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
                            0, 0, 10, 10, gVentana, (HMENU)(INT_PTR)IDC_RUT_IDA, gInst, NULL), TAB_RUT);
     boton(TAB_RUT, IDC_RUT_REG, L"Registrar ruta");
     boton(TAB_RUT, IDC_RUT_ELI, L"Eliminar ruta");
-    boton(TAB_RUT, IDC_RUT_CAM, L"Calcular camino m\u00e1s corto");
+    boton(TAB_RUT, IDC_RUT_CAM, L"Calcular camino mas corto");
     caja(TAB_RUT, IDC_RUT_RES, true);
     pista(GetDlgItem(gVentana, IDC_RUT_ORI), L"Origen");
     pista(GetDlgItem(gVentana, IDC_RUT_DES), L"Destino");
@@ -913,7 +1085,7 @@ void crearControles() {
     pista(GetDlgItem(gVentana, IDC_PAS_DOC), L"Documento");
     pista(GetDlgItem(gVentana, IDC_PAS_NOM), L"Nombre completo");
     pista(GetDlgItem(gVentana, IDC_PAS_EDAD), L"Edad");
-    pista(GetDlgItem(gVentana, IDC_PAS_TEL), L"Tel\u00e9fono");
+    pista(GetDlgItem(gVentana, IDC_PAS_TEL), L"Telefono");
 
     gLblCola = etiqueta(TAB_COL, L"Nueva solicitud", 0);
     caja(TAB_COL, IDC_COL_DOC, false);
@@ -941,7 +1113,7 @@ void crearControles() {
     opciones[1] = L"Pasajero por documento";
     opciones[2] = L"Pasajero por nombre";
     opciones[3] = L"Ruta directa";
-    opciones[4] = L"Camino m\u00e1s corto";
+    opciones[4] = L"Camino mas corto";
     opciones[5] = L"Solicitudes por documento";
     opciones[6] = L"Historial por documento";
     for (int i = 0; i < 7; i++) {
@@ -958,15 +1130,44 @@ void crearControles() {
     boton(TAB_ARC, IDC_ARC_GUA, L"Guardar");
     boton(TAB_ARC, IDC_ARC_CAR, L"Cargar");
 
-    SendMessageW(gVentana, WM_SETFONT, (WPARAM)gFuente, TRUE);
-    SendMessageW(gTabs, WM_SETFONT, (WPARAM)gFuente, TRUE);
+    const wchar_t* navTexto[8];
+    navTexto[0] = L"Ciudades";
+    navTexto[1] = L"Rutas";
+    navTexto[2] = L"Pasajeros";
+    navTexto[3] = L"Cola";
+    navTexto[4] = L"Historial";
+    navTexto[5] = L"Busquedas";
+    navTexto[6] = L"Reportes";
+    navTexto[7] = L"Archivos";
+    for (int i = 0; i < 8; i++) {
+        Cromo* cromo = new Cromo();
+        cromo->modo = 3;
+        cromo->tab = i;
+        cromo->hover = 0;
+        cromo->down = 0;
+        gNav[i] = CreateWindowExW(0, L"SITRACCromo", navTexto[i], WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+                                  0, 0, 10, 10, gVentana, (HMENU)(INT_PTR)(IDC_NAV + i), gInst, cromo);
+        anotar(gNav[i], -1);
+    }
+
+    gEstado = CreateWindowExW(0, L"SITRACPie", L"SITRAC listo", WS_CHILD | WS_VISIBLE, 0, 0, 10, 10, gVentana, NULL, gInst, NULL);
+
     SendMessageW(gLista, WM_SETFONT, (WPARAM)gFuente, TRUE);
     SendMessageW(gLista2, WM_SETFONT, (WPARAM)gFuente, TRUE);
     SendMessageW(gResultado, WM_SETFONT, (WPARAM)gFuente, TRUE);
-    SendMessageW(gEstado, WM_SETFONT, (WPARAM)gFuente, TRUE);
     for (int i = 0; i < gNPiezas; i++) {
-        SendMessageW(gPiezas[i].hwnd, WM_SETFONT, (WPARAM)gFuente, TRUE);
+        HFONT fuente = gFuente;
+        wchar_t clase[32];
+        GetClassNameW(gPiezas[i].hwnd, clase, 32);
+        if (lstrcmpW(clase, L"STATIC") == 0) {
+            fuente = gFuenteBoton;
+        }
+        SendMessageW(gPiezas[i].hwnd, WM_SETFONT, (WPARAM)fuente, TRUE);
     }
+
+    RECT rect;
+    GetClientRect(gVentana, &rect);
+    organizar(rect.right, rect.bottom);
 }
 
 void ejecutarComando(int id) {
@@ -1020,32 +1221,450 @@ void ejecutarComando(int id) {
     }
 }
 
-LRESULT CALLBACK EncabezadoProc(HWND hwnd, UINT mensaje, WPARAM wParam, LPARAM lParam) {
+void pintarFondoBarra(HDC dc, HWND hwnd) {
+    RECT local;
+    GetClientRect(hwnd, &local);
+    RECT pantalla;
+    GetWindowRect(hwnd, &pantalla);
+    POINT origen;
+    origen.x = pantalla.left;
+    origen.y = pantalla.top;
+    ScreenToClient(GetParent(hwnd), &origen);
+    RECT padre;
+    GetClientRect(GetParent(hwnd), &padre);
+    int alto = padre.bottom - PIE_ALTO;
+    if (alto < 1) {
+        alto = 1;
+    }
+    for (int y = 0; y < local.bottom; y++) {
+        HBRUSH brocha = CreateSolidBrush(colorBarra(origen.y + y, alto));
+        RECT linea;
+        linea.left = 0;
+        linea.right = local.right;
+        linea.top = y;
+        linea.bottom = y + 1;
+        FillRect(dc, &linea, brocha);
+        DeleteObject(brocha);
+    }
+}
+
+void pulsarCromo(HWND hwnd) {
+    int id = GetDlgCtrlID(hwnd);
+    SendMessageW(GetParent(hwnd), WM_COMMAND, MAKEWPARAM(id, BN_CLICKED), (LPARAM)hwnd);
+}
+
+LRESULT CALLBACK CromoProc(HWND hwnd, UINT mensaje, WPARAM wParam, LPARAM lParam) {
+    if (mensaje == WM_NCCREATE) {
+        CREATESTRUCTW* creado = (CREATESTRUCTW*)lParam;
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)creado->lpCreateParams);
+        return DefWindowProcW(hwnd, mensaje, wParam, lParam);
+    }
+    Cromo* cromo = (Cromo*)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+    if (mensaje == WM_NCDESTROY) {
+        delete cromo;
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+        return DefWindowProcW(hwnd, mensaje, wParam, lParam);
+    }
+    if (cromo == NULL) {
+        return DefWindowProcW(hwnd, mensaje, wParam, lParam);
+    }
+
+    switch (mensaje) {
+        case WM_ERASEBKGND:
+            return 1;
+        case WM_SETCURSOR:
+            SetCursor(LoadCursor(NULL, IDC_HAND));
+            return TRUE;
+        case WM_GETDLGCODE:
+            return DLGC_BUTTON;
+        case WM_MOUSEMOVE:
+            if (!cromo->hover) {
+                cromo->hover = 1;
+                TRACKMOUSEEVENT rastreo;
+                rastreo.cbSize = sizeof(rastreo);
+                rastreo.dwFlags = TME_LEAVE;
+                rastreo.hwndTrack = hwnd;
+                rastreo.dwHoverTime = 0;
+                TrackMouseEvent(&rastreo);
+                InvalidateRect(hwnd, NULL, FALSE);
+            }
+            return 0;
+        case WM_MOUSELEAVE:
+            cromo->hover = 0;
+            cromo->down = 0;
+            InvalidateRect(hwnd, NULL, FALSE);
+            return 0;
+        case WM_LBUTTONDOWN:
+            cromo->down = 1;
+            SetCapture(hwnd);
+            SetFocus(hwnd);
+            InvalidateRect(hwnd, NULL, FALSE);
+            return 0;
+        case WM_LBUTTONUP:
+            if (cromo->down) {
+                cromo->down = 0;
+                ReleaseCapture();
+                POINT punto;
+                GetCursorPos(&punto);
+                ScreenToClient(hwnd, &punto);
+                RECT rect;
+                GetClientRect(hwnd, &rect);
+                InvalidateRect(hwnd, NULL, FALSE);
+                if (PtInRect(&rect, punto)) {
+                    pulsarCromo(hwnd);
+                }
+            }
+            return 0;
+        case WM_KEYDOWN:
+            if (wParam == VK_SPACE || wParam == VK_RETURN) {
+                pulsarCromo(hwnd);
+                return 0;
+            }
+            break;
+        case WM_SETFOCUS:
+        case WM_KILLFOCUS:
+            InvalidateRect(hwnd, NULL, FALSE);
+            return 0;
+        case WM_PAINT: {
+            PAINTSTRUCT ps;
+            HDC dc = BeginPaint(hwnd, &ps);
+            RECT rect;
+            GetClientRect(hwnd, &rect);
+            bool activo = cromo->modo == 3 && cromo->tab == gPestana;
+            if (cromo->modo == 3) {
+                pintarFondoBarra(dc, hwnd);
+                if (activo || cromo->hover) {
+                    RECT pastilla = rect;
+                    InflateRect(&pastilla, -4, -3);
+                    COLORREF relleno = activo ? RGB(248, 242, 255) : RGB(124, 64, 186);
+                    redondear(dc, pastilla, relleno, relleno, 16);
+                }
+            } else {
+                COLORREF fondo = RGB(255, 255, 255);
+                HBRUSH blanca = CreateSolidBrush(fondo);
+                FillRect(dc, &rect, blanca);
+                DeleteObject(blanca);
+                RECT pastilla = rect;
+                COLORREF relleno = RGB(109, 45, 214);
+                COLORREF borde = relleno;
+                COLORREF texto = RGB(255, 255, 255);
+                if (cromo->modo == 1) {
+                    relleno = cromo->hover ? RGB(244, 236, 255) : RGB(255, 255, 255);
+                    borde = RGB(109, 45, 214);
+                    texto = RGB(88, 32, 176);
+                } else if (cromo->modo == 2) {
+                    relleno = cromo->hover ? RGB(255, 236, 244) : RGB(255, 255, 255);
+                    borde = RGB(176, 64, 112);
+                    texto = RGB(146, 36, 82);
+                } else if (cromo->hover) {
+                    relleno = RGB(88, 28, 184);
+                    borde = relleno;
+                }
+                if (cromo->down && cromo->modo == 0) {
+                    relleno = RGB(70, 20, 150);
+                    borde = relleno;
+                }
+                redondear(dc, pastilla, relleno, borde, 16);
+                SetTextColor(dc, texto);
+            }
+
+            wchar_t texto[160];
+            GetWindowTextW(hwnd, texto, 160);
+            SetBkMode(dc, TRANSPARENT);
+            HFONT fuente = (HFONT)SelectObject(dc, cromo->modo == 3 ? gFuente : gFuenteBoton);
+            if (cromo->modo == 3) {
+                SetTextColor(dc, activo ? RGB(72, 24, 138) : RGB(236, 226, 252));
+                RECT zona = rect;
+                zona.left += 22;
+                DrawTextW(dc, texto, -1, &zona, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+                wchar_t numero[8];
+                wsprintfW(numero, L"%02d", cromo->tab + 1);
+                zona.right -= 16;
+                SetTextColor(dc, activo ? RGB(146, 92, 214) : RGB(214, 176, 132));
+                SelectObject(dc, gFuenteMini);
+                DrawTextW(dc, numero, -1, &zona, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+            } else {
+                DrawTextW(dc, texto, -1, &rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            }
+            if (GetFocus() == hwnd) {
+                RECT foco = rect;
+                InflateRect(&foco, -4, -4);
+                DrawFocusRect(dc, &foco);
+            }
+            SelectObject(dc, fuente);
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
+        default:
+            break;
+    }
+    return DefWindowProcW(hwnd, mensaje, wParam, lParam);
+}
+
+LRESULT CALLBACK TarjetaProc(HWND hwnd, UINT mensaje, WPARAM wParam, LPARAM lParam) {
+    if (mensaje == WM_ERASEBKGND) {
+        return 1;
+    }
     if (mensaje == WM_PAINT) {
         PAINTSTRUCT ps;
         HDC dc = BeginPaint(hwnd, &ps);
         RECT rect;
         GetClientRect(hwnd, &rect);
-        HBRUSH brocha = CreateSolidBrush(RGB(14, 48, 92));
+        HBRUSH fondo = CreateSolidBrush(RGB(244, 239, 250));
+        FillRect(dc, &rect, fondo);
+        DeleteObject(fondo);
+        RECT sombra = rect;
+        sombra.left += 5;
+        sombra.top += 7;
+        sombra.right -= 2;
+        sombra.bottom -= 2;
+        redondear(dc, sombra, RGB(214, 198, 232), RGB(214, 198, 232), 22);
+        RECT cuerpo = rect;
+        cuerpo.right -= 8;
+        cuerpo.bottom -= 10;
+        redondear(dc, cuerpo, RGB(255, 255, 255), RGB(226, 214, 242), 22);
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    return DefWindowProcW(hwnd, mensaje, wParam, lParam);
+}
+
+void pintarMetrica(HDC dc, RECT rect, const wchar_t* titulo, const wchar_t* valor) {
+    redondear(dc, rect, RGB(255, 255, 255), RGB(226, 214, 242), 18);
+    RECT etiqueta = rect;
+    etiqueta.left += 16;
+    etiqueta.top += 12;
+    etiqueta.right -= 10;
+    etiqueta.bottom = etiqueta.top + 20;
+    SetTextColor(dc, RGB(132, 104, 168));
+    HFONT anterior = (HFONT)SelectObject(dc, gFuenteMini);
+    DrawTextW(dc, titulo, -1, &etiqueta, DT_LEFT | DT_SINGLELINE);
+    RECT numero = rect;
+    numero.left += 16;
+    numero.top += 32;
+    numero.right -= 10;
+    SetTextColor(dc, RGB(78, 28, 156));
+    SelectObject(dc, gFuenteMarca);
+    DrawTextW(dc, valor, -1, &numero, DT_LEFT | DT_SINGLELINE);
+    SelectObject(dc, anterior);
+}
+
+LRESULT CALLBACK MetricasProc(HWND hwnd, UINT mensaje, WPARAM wParam, LPARAM lParam) {
+    if (mensaje == WM_ERASEBKGND) {
+        return 1;
+    }
+    if (mensaje == WM_PAINT) {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(hwnd, &ps);
+        RECT rect;
+        GetClientRect(hwnd, &rect);
+        HBRUSH fondo = CreateSolidBrush(RGB(244, 239, 250));
+        FillRect(dc, &rect, fondo);
+        DeleteObject(fondo);
+        SetBkMode(dc, TRANSPARENT);
+
+        const wchar_t* titulos[4];
+        titulos[0] = L"CIUDADES";
+        titulos[1] = L"RUTAS";
+        titulos[2] = L"PASAJEROS";
+        titulos[3] = L"EN COLA";
+        wstring valores[4];
+        valores[0] = ampliar(enteroATexto(contarCiudades(gCiudades)));
+        valores[1] = ampliar(enteroATexto(contarRutas(gCiudades)));
+        valores[2] = ampliar(enteroATexto(contarPasajeros(gPasajeros)));
+        valores[3] = ampliar(enteroATexto(contarCola(gCola)));
+
+        int separacion = 12;
+        int ancho = (rect.right - separacion * 3) / 4;
+        if (ancho < 40) {
+            ancho = 40;
+        }
+        for (int i = 0; i < 4; i++) {
+            RECT pieza;
+            pieza.left = i * (ancho + separacion);
+            pieza.top = 2;
+            pieza.right = pieza.left + ancho;
+            pieza.bottom = rect.bottom - 4;
+            pintarMetrica(dc, pieza, titulos[i], valores[i].c_str());
+        }
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    return DefWindowProcW(hwnd, mensaje, wParam, lParam);
+}
+
+LRESULT CALLBACK PieProc(HWND hwnd, UINT mensaje, WPARAM wParam, LPARAM lParam) {
+    if (mensaje == WM_ERASEBKGND) {
+        return 1;
+    }
+    if (mensaje == WM_PAINT) {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(hwnd, &ps);
+        RECT rect;
+        GetClientRect(hwnd, &rect);
+        HBRUSH brocha = CreateSolidBrush(RGB(24, 8, 46));
         FillRect(dc, &rect, brocha);
         DeleteObject(brocha);
+        RECT acento = rect;
+        acento.bottom = acento.top + 2;
+        HBRUSH linea = CreateSolidBrush(RGB(168, 96, 232));
+        FillRect(dc, &acento, linea);
+        DeleteObject(linea);
         SetBkMode(dc, TRANSPARENT);
-        SetTextColor(dc, RGB(255, 255, 255));
-        HFONT anterior = (HFONT)SelectObject(dc, gFuenteTitulo);
-        RECT titulo = rect;
-        titulo.left = 18;
-        titulo.top = 12;
-        DrawTextW(dc, L"SITRAC", -1, &titulo, DT_LEFT | DT_TOP | DT_SINGLELINE);
-        SelectObject(dc, gFuente);
-        SetTextColor(dc, RGB(214, 226, 242));
-        titulo.top = 40;
-        DrawTextW(dc, L"Sistema Inteligente de Transporte y Gesti\u00f3n de Rutas   \u00b7   Universidad Santo Tom\u00e1s",
-                  -1, &titulo, DT_LEFT | DT_TOP | DT_SINGLELINE);
+        SetTextColor(dc, RGB(236, 226, 252));
+        HFONT anterior = (HFONT)SelectObject(dc, gFuenteMini);
+        wchar_t texto[256];
+        GetWindowTextW(hwnd, texto, 256);
+        RECT zona = rect;
+        zona.left = 22;
+        zona.top += 2;
+        DrawTextW(dc, L"SITRAC", -1, &zona, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        zona.left = 92;
+        SetTextColor(dc, RGB(196, 176, 224));
+        DrawTextW(dc, texto, -1, &zona, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        zona.left = 0;
+        zona.right -= 18;
+        SetTextColor(dc, RGB(214, 176, 132));
+        DrawTextW(dc, L"Universidad Santo Tomas", -1, &zona, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
         SelectObject(dc, anterior);
         EndPaint(hwnd, &ps);
         return 0;
     }
     return DefWindowProcW(hwnd, mensaje, wParam, lParam);
+}
+
+const wchar_t* tituloPestana(int pestana) {
+    if (pestana == TAB_RUT) return L"Rutas";
+    if (pestana == TAB_PAS) return L"Pasajeros";
+    if (pestana == TAB_COL) return L"Cola de solicitudes";
+    if (pestana == TAB_HIS) return L"Historial";
+    if (pestana == TAB_BUS) return L"Busquedas";
+    if (pestana == TAB_REP) return L"Reportes";
+    if (pestana == TAB_ARC) return L"Archivos";
+    return L"Ciudades";
+}
+
+const wchar_t* subtituloPestana(int pestana) {
+    if (pestana == TAB_RUT) return L"Rutas dirigidas y el camino mas corto entre dos ciudades";
+    if (pestana == TAB_PAS) return L"Personas que pueden pedir un viaje";
+    if (pestana == TAB_COL) return L"La primera solicitud es la siguiente en ser atendida";
+    if (pestana == TAB_HIS) return L"Viajes atendidos, rechazados y cancelados";
+    if (pestana == TAB_BUS) return L"Consulte la red, los pasajeros y los recorridos";
+    if (pestana == TAB_REP) return L"Resumen de la operacion del sistema";
+    if (pestana == TAB_ARC) return L"Guardar o volver a cargar la carpeta de datos";
+    return L"Red de ciudades y conexiones de salida";
+}
+
+void pintarVentana(HDC dc, RECT rect) {
+    HBRUSH fondo = CreateSolidBrush(RGB(244, 239, 250));
+    FillRect(dc, &rect, fondo);
+    DeleteObject(fondo);
+
+    RECT barra;
+    barra.left = 0;
+    barra.top = 0;
+    barra.right = NAV_ANCHO;
+    barra.bottom = rect.bottom - PIE_ALTO;
+    rellenarDegradado(dc, barra, RGB(96, 32, 168), RGB(28, 8, 52));
+
+    RECT filo;
+    filo.left = NAV_ANCHO - 1;
+    filo.top = 0;
+    filo.right = NAV_ANCHO;
+    filo.bottom = barra.bottom;
+    HBRUSH filoBrocha = CreateSolidBrush(RGB(214, 176, 132));
+    FillRect(dc, &filo, filoBrocha);
+    DeleteObject(filoBrocha);
+
+    HBRUSH medalla = CreateSolidBrush(RGB(244, 236, 255));
+    HPEN pluma = CreatePen(PS_SOLID, 1, RGB(244, 236, 255));
+    HGDIOBJ viejaBrocha = SelectObject(dc, medalla);
+    HGDIOBJ viejaPluma = SelectObject(dc, pluma);
+    Ellipse(dc, 26, 28, 74, 76);
+    SelectObject(dc, viejaBrocha);
+    SelectObject(dc, viejaPluma);
+    DeleteObject(medalla);
+    DeleteObject(pluma);
+
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, RGB(88, 32, 168));
+    HFONT anterior = (HFONT)SelectObject(dc, gFuenteMarca);
+    RECT marca = {26, 36, 74, 72};
+    DrawTextW(dc, L"S", -1, &marca, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    SetTextColor(dc, RGB(255, 255, 255));
+    SelectObject(dc, gFuenteTitulo);
+    RECT nombre = {88, 26, NAV_ANCHO - 12, 58};
+    DrawTextW(dc, L"SITRAC", -1, &nombre, DT_LEFT | DT_SINGLELINE);
+    SetTextColor(dc, RGB(226, 208, 248));
+    SelectObject(dc, gFuenteMini);
+    RECT detalle = {88, 56, NAV_ANCHO - 16, 78};
+    DrawTextW(dc, L"Transporte y rutas", -1, &detalle, DT_LEFT | DT_SINGLELINE);
+
+    int x = NAV_ANCHO + 28;
+    SetTextColor(dc, RGB(48, 16, 92));
+    SelectObject(dc, gFuenteTitulo);
+    RECT titulo = {x, 16, rect.right - 24, 52};
+    DrawTextW(dc, tituloPestana(gPestana), -1, &titulo, DT_LEFT | DT_SINGLELINE);
+    SetTextColor(dc, RGB(122, 96, 156));
+    SelectObject(dc, gFuente);
+    RECT sub = {x, 48, rect.right - 24, 74};
+    DrawTextW(dc, subtituloPestana(gPestana), -1, &sub, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
+    SelectObject(dc, anterior);
+}
+
+LRESULT pintarLista(NMHDR* aviso, LPARAM lParam) {
+    HWND cabecera1 = (HWND)SendMessageW(gLista, LVM_GETHEADER, 0, 0);
+    HWND cabecera2 = (HWND)SendMessageW(gLista2, LVM_GETHEADER, 0, 0);
+    if (aviso->hwndFrom == cabecera1 || aviso->hwndFrom == cabecera2) {
+        NMCUSTOMDRAW* dibujo = (NMCUSTOMDRAW*)lParam;
+        if (dibujo->dwDrawStage == CDDS_PREPAINT) {
+            return CDRF_NOTIFYITEMDRAW;
+        }
+        if (dibujo->dwDrawStage == CDDS_ITEMPREPAINT) {
+            HBRUSH brocha = CreateSolidBrush(RGB(74, 32, 128));
+            FillRect(dibujo->hdc, &dibujo->rc, brocha);
+            DeleteObject(brocha);
+            SetBkMode(dibujo->hdc, TRANSPARENT);
+            SetTextColor(dibujo->hdc, RGB(255, 255, 255));
+            HFONT anterior = (HFONT)SelectObject(dibujo->hdc, gFuenteMini);
+            wchar_t texto[128];
+            HDITEMW item;
+            ZeroMemory(&item, sizeof(item));
+            item.mask = HDI_TEXT;
+            item.pszText = texto;
+            item.cchTextMax = 128;
+            texto[0] = 0;
+            SendMessageW(aviso->hwndFrom, HDM_GETITEMW, dibujo->dwItemSpec, (LPARAM)&item);
+            RECT zona = dibujo->rc;
+            zona.left += 10;
+            DrawTextW(dibujo->hdc, texto, -1, &zona, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+            SelectObject(dibujo->hdc, anterior);
+            return CDRF_SKIPDEFAULT;
+        }
+        return CDRF_DODEFAULT;
+    }
+
+    if (aviso->hwndFrom == gLista || aviso->hwndFrom == gLista2) {
+        NMLVCUSTOMDRAW* dibujo = (NMLVCUSTOMDRAW*)lParam;
+        if (dibujo->nmcd.dwDrawStage == CDDS_PREPAINT) {
+            return CDRF_NOTIFYITEMDRAW;
+        }
+        if (dibujo->nmcd.dwDrawStage == CDDS_ITEMPREPAINT) {
+            bool seleccionado = (dibujo->nmcd.uItemState & CDIS_SELECTED) != 0;
+            if (seleccionado) {
+                dibujo->clrText = RGB(255, 255, 255);
+                dibujo->clrTextBk = RGB(109, 45, 214);
+            } else if ((dibujo->nmcd.dwItemSpec % 2) == 1) {
+                dibujo->clrText = RGB(48, 22, 84);
+                dibujo->clrTextBk = RGB(246, 240, 252);
+            } else {
+                dibujo->clrText = RGB(48, 22, 84);
+                dibujo->clrTextBk = RGB(255, 255, 255);
+            }
+            return CDRF_NEWFONT;
+        }
+    }
+    return CDRF_DODEFAULT;
 }
 
 LRESULT CALLBACK VentanaProc(HWND hwnd, UINT mensaje, WPARAM wParam, LPARAM lParam) {
@@ -1067,6 +1686,26 @@ LRESULT CALLBACK VentanaProc(HWND hwnd, UINT mensaje, WPARAM wParam, LPARAM lPar
             }
             mostrarPestana(TAB_CIU);
             return 0;
+        case WM_ERASEBKGND:
+            return 1;
+        case WM_PAINT: {
+            PAINTSTRUCT ps;
+            HDC dc = BeginPaint(hwnd, &ps);
+            RECT rect;
+            GetClientRect(hwnd, &rect);
+            if (rect.right > 0 && rect.bottom > 0) {
+                HDC memoria = CreateCompatibleDC(dc);
+                HBITMAP mapa = CreateCompatibleBitmap(dc, rect.right, rect.bottom);
+                HGDIOBJ anterior = SelectObject(memoria, mapa);
+                pintarVentana(memoria, rect);
+                BitBlt(dc, 0, 0, rect.right, rect.bottom, memoria, 0, 0, SRCCOPY);
+                SelectObject(memoria, anterior);
+                DeleteObject(mapa);
+                DeleteDC(memoria);
+            }
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
         case WM_SIZE: {
             int ancho = LOWORD(lParam);
             int alto = HIWORD(lParam);
@@ -1075,19 +1714,49 @@ LRESULT CALLBACK VentanaProc(HWND hwnd, UINT mensaje, WPARAM wParam, LPARAM lPar
             }
             return 0;
         }
+        case WM_CTLCOLORSTATIC: {
+            HDC dc = (HDC)wParam;
+            SetTextColor(dc, RGB(86, 42, 148));
+            SetBkColor(dc, RGB(255, 255, 255));
+            return (LRESULT)gBrochaBlanca;
+        }
+        case WM_CTLCOLOREDIT: {
+            HDC dc = (HDC)wParam;
+            SetTextColor(dc, RGB(42, 16, 78));
+            SetBkColor(dc, RGB(255, 255, 255));
+            return (LRESULT)gBrochaBlanca;
+        }
+        case WM_CTLCOLORBTN: {
+            HDC dc = (HDC)wParam;
+            SetTextColor(dc, RGB(72, 32, 132));
+            SetBkColor(dc, RGB(255, 255, 255));
+            return (LRESULT)gBrochaBlanca;
+        }
+        case WM_CTLCOLORLISTBOX: {
+            HDC dc = (HDC)wParam;
+            SetTextColor(dc, RGB(42, 16, 78));
+            SetBkColor(dc, RGB(255, 255, 255));
+            return (LRESULT)gBrochaBlanca;
+        }
         case WM_COMMAND:
             if (HIWORD(wParam) == BN_CLICKED || HIWORD(wParam) == 0) {
-                ejecutarComando(LOWORD(wParam));
+                int id = LOWORD(wParam);
+                if (id >= IDC_NAV && id < IDC_NAV + 8) {
+                    mostrarPestana(id - IDC_NAV);
+                    RECT rect;
+                    GetClientRect(hwnd, &rect);
+                    organizar(rect.right, rect.bottom);
+                } else {
+                    ejecutarComando(id);
+                }
             }
             return 0;
         case WM_NOTIFY: {
             NMHDR* aviso = (NMHDR*)lParam;
-            if (aviso->idFrom == IDC_TAB && aviso->code == TCN_SELCHANGE) {
-                mostrarPestana((int)SendMessageW(gTabs, TCM_GETCURSEL, 0, 0));
-                RECT rect;
-                GetClientRect(hwnd, &rect);
-                organizar(rect.right, rect.bottom);
-            } else if (aviso->idFrom == IDC_LISTA && aviso->code == LVN_ITEMCHANGED) {
+            if (aviso->code == NM_CUSTOMDRAW) {
+                return pintarLista(aviso, lParam);
+            }
+            if (aviso->idFrom == IDC_LISTA && aviso->code == LVN_ITEMCHANGED) {
                 NMLISTVIEW* vista = (NMLISTVIEW*)lParam;
                 if ((vista->uNewState & LVIS_SELECTED) != 0) {
                     alSeleccionar();
@@ -1097,8 +1766,8 @@ LRESULT CALLBACK VentanaProc(HWND hwnd, UINT mensaje, WPARAM wParam, LPARAM lPar
         }
         case WM_GETMINMAXINFO: {
             MINMAXINFO* info = (MINMAXINFO*)lParam;
-            info->ptMinTrackSize.x = 980;
-            info->ptMinTrackSize.y = 640;
+            info->ptMinTrackSize.x = 1100;
+            info->ptMinTrackSize.y = 700;
             return 0;
         }
         case WM_DESTROY:
@@ -1122,21 +1791,51 @@ extern "C" int WINAPI WinMain(HINSTANCE instancia, HINSTANCE, LPSTR, int mostrar
 
     INITCOMMONCONTROLSEX controles;
     controles.dwSize = sizeof(controles);
-    controles.dwICC = ICC_LISTVIEW_CLASSES | ICC_TAB_CLASSES | ICC_BAR_CLASSES | ICC_WIN95_CLASSES;
+    controles.dwICC = ICC_LISTVIEW_CLASSES | ICC_BAR_CLASSES | ICC_WIN95_CLASSES;
     InitCommonControlsEx(&controles);
 
+    gBrochaFondo = CreateSolidBrush(RGB(244, 239, 250));
+    gBrochaBlanca = CreateSolidBrush(RGB(255, 255, 255));
     gFuente = CreateFontW(-16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                           OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+    gFuenteBoton = CreateFontW(-15, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+                               OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+    gFuenteMini = CreateFontW(-12, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+                              OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
     gFuenteTitulo = CreateFontW(-28, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                                 OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+    gFuenteMarca = CreateFontW(-22, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+                               OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
 
-    WNDCLASSW encabezadoClase;
-    ZeroMemory(&encabezadoClase, sizeof(encabezadoClase));
-    encabezadoClase.lpfnWndProc = EncabezadoProc;
-    encabezadoClase.hInstance = instancia;
-    encabezadoClase.lpszClassName = L"SITRACEncabezado";
-    encabezadoClase.hCursor = LoadCursor(NULL, IDC_ARROW);
-    RegisterClassW(&encabezadoClase);
+    WNDCLASSW cromoClase;
+    ZeroMemory(&cromoClase, sizeof(cromoClase));
+    cromoClase.lpfnWndProc = CromoProc;
+    cromoClase.hInstance = instancia;
+    cromoClase.lpszClassName = L"SITRACCromo";
+    cromoClase.hCursor = LoadCursor(NULL, IDC_HAND);
+    RegisterClassW(&cromoClase);
+
+    WNDCLASSW tarjetaClase;
+    ZeroMemory(&tarjetaClase, sizeof(tarjetaClase));
+    tarjetaClase.lpfnWndProc = TarjetaProc;
+    tarjetaClase.hInstance = instancia;
+    tarjetaClase.lpszClassName = L"SITRACTarjeta";
+    tarjetaClase.hCursor = LoadCursor(NULL, IDC_ARROW);
+    RegisterClassW(&tarjetaClase);
+
+    WNDCLASSW metricasClase;
+    ZeroMemory(&metricasClase, sizeof(metricasClase));
+    metricasClase.lpfnWndProc = MetricasProc;
+    metricasClase.hInstance = instancia;
+    metricasClase.lpszClassName = L"SITRACMetricas";
+    RegisterClassW(&metricasClase);
+
+    WNDCLASSW pieClase;
+    ZeroMemory(&pieClase, sizeof(pieClase));
+    pieClase.lpfnWndProc = PieProc;
+    pieClase.hInstance = instancia;
+    pieClase.lpszClassName = L"SITRACPie";
+    RegisterClassW(&pieClase);
 
     WNDCLASSW clase;
     ZeroMemory(&clase, sizeof(clase));
@@ -1144,14 +1843,14 @@ extern "C" int WINAPI WinMain(HINSTANCE instancia, HINSTANCE, LPSTR, int mostrar
     clase.hInstance = instancia;
     clase.lpszClassName = L"SITRACVentana";
     clase.hCursor = LoadCursor(NULL, IDC_ARROW);
-    clase.hbrBackground = CreateSolidBrush(RGB(241, 245, 249));
+    clase.hbrBackground = NULL;
     clase.hIcon = LoadIcon(NULL, IDI_APPLICATION);
     RegisterClassW(&clase);
 
     HWND ventana = CreateWindowExW(0, L"SITRACVentana",
-                                   L"SITRAC - Sistema Inteligente de Transporte y Gesti\u00f3n de Rutas",
+                                   L"SITRAC  -  Sistema Inteligente de Transporte y Gestion de Rutas",
                                    WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT,
-                                   1100, 700, NULL, NULL, instancia, NULL);
+                                   1240, 780, NULL, NULL, instancia, NULL);
     if (ventana == NULL) {
         return 1;
     }
@@ -1167,11 +1866,12 @@ extern "C" int WINAPI WinMain(HINSTANCE instancia, HINSTANCE, LPSTR, int mostrar
         }
     }
 
-    if (gFuente != NULL) {
-        DeleteObject(gFuente);
-    }
-    if (gFuenteTitulo != NULL) {
-        DeleteObject(gFuenteTitulo);
-    }
+    if (gFuente != NULL) DeleteObject(gFuente);
+    if (gFuenteTitulo != NULL) DeleteObject(gFuenteTitulo);
+    if (gFuenteMarca != NULL) DeleteObject(gFuenteMarca);
+    if (gFuenteMini != NULL) DeleteObject(gFuenteMini);
+    if (gFuenteBoton != NULL) DeleteObject(gFuenteBoton);
+    if (gBrochaFondo != NULL) DeleteObject(gBrochaFondo);
+    if (gBrochaBlanca != NULL) DeleteObject(gBrochaBlanca);
     return (int)mensaje.wParam;
 }

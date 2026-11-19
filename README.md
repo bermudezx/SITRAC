@@ -2,7 +2,7 @@
 
 Sistema Inteligente de Transporte y Gestión de Rutas.
 
-Aplicación de escritorio para Windows, hecha en C++ para la Universidad Santo Tomás. Se abre como ventana, con pestañas, listas y botones. No usa consola.
+Aplicación de escritorio para Windows, hecha en C++ para la Universidad Santo Tomás. Se abre como ventana, con una barra lateral morada, tarjetas, listas y botones. No usa consola.
 
 Repositorio: [https://github.com/bermudezx/SITRAC](https://github.com/bermudezx/SITRAC)
 
@@ -18,9 +18,9 @@ Ofrecer una aplicación Windows, compilable en Dev-C++ con C++ estándar, para g
 
 ## Funcionalidades
 
-La ventana principal tiene ocho pestañas:
+La ventana principal tiene una barra lateral morada con ocho secciones:
 
-| Pestaña | Qué permite |
+| Sección | Qué permite |
 | --- | --- |
 | Ciudades | Registrar y eliminar ciudades. Agregar o quitar conexiones. La lista de la derecha muestra las salidas de la ciudad elegida. |
 | Rutas | Registrar rutas dirigidas, también de ida y vuelta. Eliminarlas, verlas todas y calcular el camino más corto. |
